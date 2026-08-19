@@ -148,3 +148,7 @@ logs/                    # benchmark receipts and startup logs
 ```
 
 Weights are fetched by the script into your HF cache; model weights are governed by their own [Ornith-1.5 HF collection](https://huggingface.co/collections/ornith-ai/ornith-15) license, while this repository is MIT (see [LICENSE](LICENSE)).
+
+## Credits
+
+Recipe skeleton originally from [vcruz305/Ornith-1.5-35B-A3B-DGX-Spark](https://github.com/vcruz305/Ornith-1.5-35B-A3B-DGX-Spark).
