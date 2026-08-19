@@ -1,77 +1,86 @@
-# Ornith-1.5-35B-A3B on one DGX Spark (GB10)
+# Ornith-1.5 35B-A3B for DGX Spark
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
-Measured serve for [**Ornith-1.5-35B-A3B**](https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B) — a ~35B mixture-of-experts model (~3B active params/token) from the Ornith team — on a single **NVIDIA DGX Spark (GB10 / SM121, ~128 GB unified memory)**. 2026-08-19, day of release.
+Serve **[Ornith-1.5-35B-A3B](https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B)** — a ~35B mixture-of-experts model (~3B active params/token) from the Ornith team — on a single **NVIDIA DGX Spark (GB10 / SM121, ~128 GB unified memory)**: NVFP4 checkpoint, vLLM, in-checkpoint MTP speculative decoding, and up to 256k context.
 
-**Engine: vLLM + NVFP4.** Single node, `--tensor-parallel-size 1`. No multi-Spark cluster required — the NVFP4 checkpoint is ~22 GB and fits comfortably in one Spark's unified memory alongside a large KV cache.
+This repository contains a production `start.sh` recipe plus the **two patches required to make the GB10-native `b12x` MoE backend work with CUDA-graph capture** (a PFM / image-level b12x limitation — see [Patches](#patches)).
 
-## Scoreboard
+## Highlights
+
+- **Multi-Token Prediction (MTP) enabled** — vLLM in-checkpoint MTP (`--spec-method mtp --spec-tokens 1`). Ornith-1.5 ships a single MTP layer; one speculative token is the correct (and only) setting for this checkpoint, yielding ~2x the query rate of the base model path.
+- **256k context** — `--max-model-len 262144` (the model's native `max_position_embeddings`; further with YaRN scaling).
+- **24 concurrent sequences** — `--max-num-seqs 24`, at the edge of KV-cache capacity for full 256k contexts (see [KV cache](#kv-cache)).
+- **NVFP4 (~22 GB) fits one Spark** with a large KV cache — no multi-node cluster required.
+- **Reproducible, idempotent launch script** that checks the HF token, ensures cached weights, tears down stale containers, measures truly-free device memory, and returns to your shell only once `/health` goes green.
+
+## Decode throughput
+
+Measured end-to-end against the live OpenAI-compatible `/v1/chat/completions` endpoint (single Spark, MTP on, 256k context, dynamic prefill+decode):
+
+| Streams | TTFT | Aggregate | Per stream |
+|---:|---:|---:|---:|
+| ×1 | 903 ms | 87.7 tok/s | 87.7 tok/s |
+| ×2 | 531 ms | 127.5 tok/s | 66.4 tok/s |
+| ×4 | 917 ms | 189.3 tok/s | 48.5 tok/s |
+| ×6 | 503 ms | 234.7 tok/s | 41.6 tok/s |
+
+Scaling is decent on a single GB10: aggregate decode goes from ~88 tok/s (1 stream) to **~235 tok/s** at 6 concurrent streams with sub-second TTFT throughout — usable as a low-power household/single-board inference server, not a data-center node.
+
+## KV cache
+
+Measured from the live `/metrics` endpoint on the last run (`gpu-memory-utilization 0.83`):
 
 | Metric | Value |
 |---|---:|
-| Decode | **~78 tok/s** |
-| Prefill | **~3891 tok/s** |
-| sixcat-eval overall | **85.0** |
-| hermes-agentic-bench (loop gate) | **14/20 pass (70%)** |
+| KV cache size | **6,479,260 tokens** (~24.7 × 256k) |
+| GPU blocks | 3,312 × 2,112 (fp8_e4m3) |
+| KV max concurrent 256k sequences | ~24.7 |
+| SSM/linear-attention state dtype | float32 (separate from KV) |
 
-Raw speed measured with three single-stream chat-completion probes (short prompt / long prompt / medium prompt) against the live `/v1/chat/completions` endpoint — see [`logs/quick_tps_bench.py`](logs/quick_tps_bench.py). Not `llama-bench` tg128/pp512; this is real end-to-end vLLM serving throughput on one stream.
+- KV cache dtype is **fp8_e4m3** (vLLM default on GB10), ~1 byte/element; the SSM state stays in float32 and is unaffected.
+- `--max-num-seqs 24` therefore sits essentially at the KV capacity for full-length contexts: at 262k tokens per sequence the KV budget is what it is, but typical mixed-length workloads never approach it.
+- Values scale with the auto-computed `--gpu-memory-utilization` (0.8x on an idle Spark); if you raise max concurrency further, lower `--max-model-len` or accept KV-pressure warnings from the scheduler.
 
 ## Serve it yourself
 
-Weights: [`ornith-ai/Ornith-1.5-35B-A3B-NVFP4`](https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B-NVFP4) (~22 GB, ModelOpt NVFP4 checkpoint).
+Prerequisites:
+
+- An authenticated Hugging Face token at `~/.cache/huggingface/token` (a bare `hf download` without it silently hangs on HTTP 401).
+- Docker with NVIDIA Container Toolkit on the Spark.
+- The container image `eugr/spark-vllm-b12x:latest` is pulled automatically on first run if absent.
 
 ```bash
-# 1. Download (needs an authenticated HF token exported first — see note below)
-export HF_TOKEN=$(cat ~/.cache/huggingface/token)
-export HUGGINGFACE_HUB_TOKEN=$HF_TOKEN
-hf download ornith-ai/Ornith-1.5-35B-A3B-NVFP4 --local-dir ./models/Ornith-1.5-35B-A3B-NVFP4
+# 1. Start (downloads weights on first run; tears down stale containers;
+#    tails the live log and returns to the shell only once /health is green)
+./start.sh
 
-# 2. Serve (vLLM >= 0.19.1; official recipe uses --tensor-parallel-size 2 for 2x80GB GPUs —
-#    a single Spark's 128GB unified memory covers this NVFP4 checkpoint alone, so TP1 is enough)
-vllm serve ./models/Ornith-1.5-35B-A3B-NVFP4 \
-  --served-model-name ornith-1.5-35b-a3b-nvfp4 \
-  --host 127.0.0.1 --port 8100 \
-  --trust-remote-code \
-  --enable-prefix-caching \
-  --moe-backend marlin \
-  --gpu-memory-utilization 0.85 \
-  --max-model-len 65536 \
-  --enable-auto-tool-choice --tool-call-parser qwen3_xml \
-  --reasoning-parser qwen3
-```
-
-Notes:
-
-- **HF token gate.** A bare `hf download` can silently freeze around ~11 MB in if the token in `~/.cache/huggingface/token` isn't exported into the shell's env first (HTTP 401 masquerading as a hang). Export both `HF_TOKEN` and `HUGGINGFACE_HUB_TOKEN` before downloading.
-- **`--moe-backend marlin`** — vLLM auto-selects `MarlinNvFp4LinearKernel` for the linear layers and the `MARLIN` NVFP4 MoE backend out of the available set (`FLASHINFER_TRTLLM`, `FLASHINFER_CUTEDSL`, `FLASHINFER_CUTLASS`, `VLLM_CUTLASS`, `MARLIN`, `HUMMING`, `EMULATION`) — Marlin was the fastest/most compatible on this GB10 board.
-- **`--max-model-len 65536`** is a deliberate choice, not a ceiling — the model natively handles up to 262144 (and further with YaRN scaling per the model card). One idle Spark had ~92 GB RAM free at load time and reserved ~76 GB for KV cache at this setting; raise it if you want a longer window and have the headroom.
-- Model loads in ~2 min on local NVMe (safetensors read is the long pole, not compute); CUDA graph capture + torch.compile warmup adds another ~1 min before `/health` goes green.
-- **GGUF path exists too** (`ornith-ai/Ornith-1.5-35B-A3B-GGUF`, Q4_K_M ~21.7GB) but is out of scope for this repo — that's a llama.cpp/Turing-card story, tracked separately, not a DGX Spark recipe.
-
-### Quick health / smoke check
-
-```bash
-curl -sf http://127.0.0.1:8100/v1/models
-curl -s http://127.0.0.1:8100/v1/chat/completions \
+# 2. In another shell — health and a smoke test
+curl -sf http://127.0.0.1:8888/health
+curl -s http://127.0.0.1:8888/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"ornith-1.5-35b-a3b-nvfp4","messages":[{"role":"user","content":"say hi"}],"max_tokens":32}'
+
+# 3. Stop
+./stop.sh
 ```
+
+The script refuses to launch without a token, uses only memory that is actually free at launch (so it never OOMs against a competing server), and waits up to 30 minutes for health before exiting non-zero.
+
+## Patches
+
+Two bugs in the image's `b12x` MoE package crash startup the moment MTP + CUDA graphs are enabled (the pre-MTP `marlin` path did not exercise them). They are fixed here as **host-side file overlays** mounted read-only into the container — no modified Docker image is needed:
+
+1. **`patches/kernel.py`** — undefined `metadata_row` in the W4A16 output-drain path (a leftover of a b12x refactor; the correct value is the loop `row` used two lines above for `route_index`).
+2. **`patches/route_pack.py`** — the W4A16 route-packing workspace was `torch.empty`-allocated per kernel call, which is illegal under CUDA graph capture, so `pack_topk_routes_by_expert` raised. The patch substitutes a stable, grow-only per-`(name, dtype, device)` cache seeded by vLLM's pre-capture profile run and reused during capture — consistent with b12x's own documented intent that this workspace "may be shared across all layers on this stream."
+
+Pristine copies of the upstream files are kept as `patches/*.b12x` for reference. The overlay only takes effect for the b12x MoE backend; every other backend is untouched.
 
 ## Benchmarks
 
 ### sixcat-eval
 
 [`vcruz305/sixcat-eval`](https://github.com/vcruz305/sixcat-eval) — six community categories, one overall score, fast local OpenAI-compatible harness.
-
-```bash
-git clone https://github.com/vcruz305/sixcat-eval && cd sixcat-eval
-python -m sixcat \
-  --base-url http://127.0.0.1:8100/v1 \
-  --model ornith-1.5-35b-a3b-nvfp4 \
-  --limit 20 --max-minutes 30 \
-  --out results/sixcat.json
-```
 
 | Category | Score | n |
 |---|---:|---:|
@@ -87,23 +96,14 @@ Clean run, `timed_out: false`. Full receipt: [`logs/sixcat-nvfp4-20260819.json`]
 
 ### hermes-agentic-bench
 
-[`vcruz305/hermes-agentic-bench`](https://github.com/vcruz305/hermes-agentic-bench) — Hermes Agent test batteries. Ran the `hermes_loop_gate.py` contract test: 20 Hermes-shaped scripted-tool tasks scored on parse-ok, tool count, duplicate calls, and hitting the consecutive-tool cap. No live Hermes process required — model + OpenAI-compatible server only, so it isolates model weights from harness behavior.
-
-```bash
-git clone https://github.com/vcruz305/hermes-agentic-bench && cd hermes-agentic-bench
-pip install -r requirements.txt
-python hermes_loop_gate.py \
-  --base-url http://127.0.0.1:8100/v1 \
-  --model ornith-1.5-35b-a3b-nvfp4 \
-  --output results_ornith15_nvfp4_gate.json
-```
+[`vcruz305/hermes-agentic-bench`](https://github.com/vcruz305/hermes-agentic-bench) — Hermes Agent test batteries. `hermes_loop_gate.py` contract test: 20 Hermes-shaped scripted-tool tasks scored on parse-ok, tool count, duplicate calls, and hitting the consecutive-tool cap.
 
 ```
 SUMMARY {"n_tasks": 20, "n_pass": 14, "pass_rate": 0.7, "mean_tools": 3.05,
          "n_hit_cap": 0, "n_parse_fail_tasks": 0, "n_dup_tasks": 2}
 ```
 
-**0/20 hit the tool-loop cap** — the model never runs away into a dead loop, which is the failure mode this battery exists to catch. Full receipt: [`logs/hermes-agentic-gate-nvfp4-20260819.json`](logs/hermes-agentic-gate-nvfp4-20260819.json).
+**0/20 hit the tool-loop cap** — the model never runs away into a dead loop. Full receipt: [`logs/hermes-agentic-gate-nvfp4-20260819.json`](logs/hermes-agentic-gate-nvfp4-20260819.json).
 
 ## Comparison — other models measured on the same Spark fleet
 
@@ -116,24 +116,28 @@ sixcat overall, same harness/limits, all local:
 | Qwen3.8-27B AEON Q4+MTP | 80.0 | 90.0 | 25.0 | 85.0 | 80.0 | 100.0 | 100.0 |
 | Nemotron 3.5 Lightning NVFP4 | 57.9 | 17.5 | 80.0 | 65.0 | 35.0 | 60.0 | 90.0 |
 
-Ornith-1.5 leads overall and takes math by a wide margin (95 vs 25–40 for the Qwen builds). No other model in this set has hermes-agentic-bench numbers yet — Ornith-1.5 is the first.
+Ornith-1.5 leads overall and takes math by a wide margin (95 vs 25–40 for the Qwen builds).
 
 ## Hardware
 
 - NVIDIA DGX Spark, GB10, compute capability 12.1, ~128 GB unified memory (reported ~124.6 GB usable)
 - Driver 580.159.03, CUDA 13.0, aarch64
-- vLLM `0.1.dev1+g75231eff2.d20260809`
-- No multi-node RPC, no NCCL, no tensor parallelism — one board, one process
+- vLLM build inside `eugr/spark-vllm-b12x:latest` (`v0.1.dev20003`), flashinfer_b12x family kernels
+- No multi-node RPC, no NCCL mesh, no tensor parallelism — one board, one process
 
-## Files
+## Repository layout
 
 ```
-logs/
-  sixcat-nvfp4-20260819.json              # full sixcat receipt (categories, items, log path)
-  hermes-agentic-gate-nvfp4-20260819.json # full hermes-agentic-bench loop-gate receipt
-  quick_tps_bench.py                      # raw prefill/decode probe script
+start.sh                 # idempotent launcher: token gate → weight cache → memory probe → run → wait for health
+stop.sh                  # stops/removes the serve container (or legacy bare-metal vLLM)
+patches/
+  kernel.py              # PATCHED b12x w4a16 kernel (metadata_row fix)
+  route_pack.py          # PATCHED b12x route-packing workspace (capture-safe)
+  *.b12x                 # pristine upstream copies for diffing
+logs/                    # benchmark receipts and startup logs
+  sixcat-nvfp4-20260819.json
+  hermes-agentic-gate-nvfp4-20260819.json
+  quick_tps_bench.py
 ```
 
-## License
-
-MIT — see [LICENSE](LICENSE). Model weights are governed by their own license on the [Ornith-1.5 HF collection](https://huggingface.co/collections/ornith-ai/ornith-15); this repo covers the serving recipe and benchmark receipts only.
+Weights are fetched by the script into your HF cache; model weights are governed by their own [Ornith-1.5 HF collection](https://huggingface.co/collections/ornith-ai/ornith-15) license, while this repository is MIT (see [LICENSE](LICENSE)).
