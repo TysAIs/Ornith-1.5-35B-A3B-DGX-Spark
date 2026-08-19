@@ -99,7 +99,7 @@ Pristine copies of the upstream files are kept as `patches/*.b12x` for reference
 | Code | 85.0 | 20 |
 | Tools | 100.0 | 20 |
 
-Clean run, `timed_out: false`. Full receipt: [`logs/sixcat-nvfp4-20260819.json`](logs/sixcat-nvfp4-20260819.json).
+Clean run, `timed_out: false`. Full receipt kept locally at `logs/sixcat-nvfp4-20260819.json`.
 
 ### hermes-agentic-bench
 
@@ -110,7 +110,7 @@ SUMMARY {"n_tasks": 20, "n_pass": 14, "pass_rate": 0.7, "mean_tools": 3.05,
          "n_hit_cap": 0, "n_parse_fail_tasks": 0, "n_dup_tasks": 2}
 ```
 
-**0/20 hit the tool-loop cap** — the model never runs away into a dead loop. Full receipt: [`logs/hermes-agentic-gate-nvfp4-20260819.json`](logs/hermes-agentic-gate-nvfp4-20260819.json).
+**0/20 hit the tool-loop cap** — the model never runs away into a dead loop. Full receipt kept locally at `logs/hermes-agentic-gate-nvfp4-20260819.json`.
 
 ## Comparison — other models measured on the same Spark fleet
 
@@ -141,11 +141,9 @@ patches/
   kernel.py              # PATCHED b12x w4a16 kernel (metadata_row fix)
   route_pack.py          # PATCHED b12x route-packing workspace (capture-safe)
   *.b12x                 # pristine upstream copies for diffing
-logs/                    # benchmark receipts and startup logs
-  sixcat-nvfp4-20260819.json
-  hermes-agentic-gate-nvfp4-20260819.json
-  quick_tps_bench.py
 ```
+
+> Benchmark receipts and startup logs are kept locally in `logs/` (gitignored) — they are not part of this repository.
 
 Weights are fetched by the script into your HF cache; model weights are governed by their own [Ornith-1.5 HF collection](https://huggingface.co/collections/ornith-ai/ornith-15) license, while this repository is MIT (see [LICENSE](LICENSE)).
 

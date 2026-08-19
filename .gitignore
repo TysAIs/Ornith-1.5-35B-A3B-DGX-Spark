@@ -1,4 +1,3 @@
-# Local noise — startup logs change every run; receipts live in logs/ are tracked.
-logs/start-*.log
+logs/
 __pycache__/
 *.pyc
