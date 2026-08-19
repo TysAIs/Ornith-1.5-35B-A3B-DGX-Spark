@@ -27,12 +27,14 @@ Measured end-to-end against the live OpenAI-compatible `/v1/chat/completions` en
 
 | Streams | TTFT | Aggregate | Per stream |
 |---:|---:|---:|---:|
-| ×1 | 903 ms | 87.7 tok/s | 87.7 tok/s |
-| ×2 | 531 ms | 127.5 tok/s | 66.4 tok/s |
-| ×4 | 917 ms | 189.3 tok/s | 48.5 tok/s |
-| ×6 | 503 ms | 234.7 tok/s | 41.6 tok/s |
+| ×1 | 122 ms | 86.3 tok/s | 86.3 tok/s |
+| ×2 | 717 ms | 124.3 tok/s | 64.6 tok/s |
+| ×4 | 600 ms | 186.7 tok/s | 47.8 tok/s |
+| ×8 | 532 ms | 263.5 tok/s | 35.6 tok/s |
+| ×12 | 504 ms | 329.4 tok/s | 28.7 tok/s |
+| ×24 | 660 ms | 440.3 tok/s | 19.8 tok/s |
 
-Scaling is decent on a single GB10: aggregate decode goes from ~88 tok/s (1 stream) to **~235 tok/s** at 6 concurrent streams with sub-second TTFT throughout — usable as a low-power household/single-board inference server, not a data-center node.
+Scaling: on a single GB10 the aggregate keeps growing with concurrency — from ~86 tok/s (1 stream) to **~440 tok/s at 24 concurrent streams** with sub-second TTFT throughout. That's the figure behind the “up to 440 tok/s” headline; single-stream stays ~86-88 tok/s. Usable as a low-power household/single-board inference server, not a data-center node.
 
 ## KV cache
 
