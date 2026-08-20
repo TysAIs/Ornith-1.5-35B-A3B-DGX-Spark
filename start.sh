@@ -13,8 +13,8 @@ IMAGE="eugr/spark-vllm-b12x:latest"
 CONTAINER="ornith-b12x-serve"
 REPO="ornith-ai/Ornith-1.5-35B-A3B-NVFP4"
 SERVED_MODEL_NAME="ornith-1.5-35b-a3b-nvfp4"
-HOST="${HOST:-127.0.0.1}"
-PORT="${PORT:-8888}"
+HOST="${HOST:-0.0.0.0}"
+PORT="${PORT:-8889}"
 HF_CACHE="${HF_HOME:-$HOME/.cache/huggingface}"
 VLLM_CACHE="${VLLM_CACHE:-$HOME/.cache/vllm}"
 CONTAINER_HF="/root/.cache/huggingface"
@@ -111,7 +111,8 @@ docker run -d \
     --gpu-memory-utilization "$GPU_UTIL" \
     --max-model-len 262144 \
     --enable-auto-tool-choice --tool-call-parser qwen3_xml \
-    --reasoning-parser qwen3
+    --reasoning-parser qwen3 \
+    --limit-mm-per-prompt image=1,video=1
 
 echo "Launched container $CONTAINER (image $IMAGE)."
 echo "Following the live vLLM log until the server is healthy..."
