@@ -71,7 +71,7 @@ GPU_UTIL=0.85
 # Wait for the stale server's memory to actually be released (can lag a rm -f
 # by many seconds), then probe.
 for _ in $(seq 1 30); do
-  DEVINFO="$("$PYBIN" -c 'import torch; f,t=torch.cuda.mem_get_info(); print(int(f//1048576), int(t//1048576))' 2>/dev/null)"
+  DEVINFO="$("$PYBIN" -c 'import torch; f,t=torch.cuda.mem_get_info(); print(int(f//1048576), int(t//1048576))' 2>/dev/null || true)"
   read -r FREE_MIB TOTAL_MIB <<< "$DEVINFO"
   [[ -n "$FREE_MIB" && -n "$TOTAL_MIB" ]] && (( FREE_MIB > 64*1024 )) && break
   sleep 2
