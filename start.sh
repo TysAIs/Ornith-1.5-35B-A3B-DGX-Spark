@@ -112,7 +112,7 @@ docker run -d \
     --max-model-len 262144 \
     --enable-auto-tool-choice --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3 \
-    --limit-mm-per-prompt image=1,video=1
+    --limit-mm-per-prompt '{"image": 1, "video": 1}'
 
 echo "Launched container $CONTAINER (image $IMAGE)."
 echo "Following the live vLLM log until the server is healthy..."
