@@ -60,7 +60,7 @@ fi
 # and we'd launch with a crippled util. (Container shares the device, the host
 # probe is representative.) README's 0.85 assumes an idle Spark; we request
 # what's actually free minus a margin instead of failing. --
-PROBE_BIN="$(command -v vllm)"
+PROBE_BIN="$(command -v vllm || true)"
 if [[ -n "$PROBE_BIN" ]]; then
   PYBIN="$(head -1 "$PROBE_BIN" | sed 's/^#!//')"
 else
