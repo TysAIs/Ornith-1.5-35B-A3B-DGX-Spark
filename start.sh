@@ -72,7 +72,7 @@ GPU_UTIL=0.85
 # by many seconds), then probe.
 for _ in $(seq 1 30); do
   DEVINFO="$("$PYBIN" -c 'import torch; f,t=torch.cuda.mem_get_info(); print(int(f//1048576), int(t//1048576))' 2>/dev/null || true)"
-  read -r FREE_MIB TOTAL_MIB <<< "$DEVINFO"
+  read -r FREE_MIB TOTAL_MIB <<< "$DEVINFO" || true
   [[ -n "$FREE_MIB" && -n "$TOTAL_MIB" ]] && (( FREE_MIB > 64*1024 )) && break
   sleep 2
   [[ -n "$FREE_MIB" ]] || { unset FREE_MIB TOTAL_MIB; continue; }
