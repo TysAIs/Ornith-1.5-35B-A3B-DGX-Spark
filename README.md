@@ -76,6 +76,26 @@ curl -s http://127.0.0.1:8888/v1/chat/completions \
 
 The script refuses to launch without a token, uses only memory that is actually free at launch (so it never OOMs against a competing server), and waits up to 30 minutes for health before exiting non-zero.
 
+
+## Vision & video (TysAIs fork additions)
+
+This fork enables the checkpoint's built-in multimodal support, which upstream serves text-only:
+
+- `--limit-mm-per-prompt '{"image": 1, "video": 1}'` — accepts one image and/or one video per request
+- Served on `0.0.0.0:8889` (fleet-reachable; upstream defaults to 127.0.0.1:8888)
+- **Verified on DGX Spark 2026-08-21**: image input (screenshot description) and video input (red-screen + text identification) both return correct, detailed answers. Image tokens ~1k per screenshot; 8 concurrent requests complete in ~17s wall with real content.
+
+### Host-launch fixes (upstream script crashed on hosts without `vllm`/`torch`)
+
+The upstream memory-probe section assumed a host `vllm` binary and `torch`; under `set -euo pipefail` the probe silently killed the launch on a bare host. Guards added:
+
+- `PROBE_BIN="$(command -v vllm || true)"` — fall back to python3 probe
+- `DEVINFO="$(... 2>/dev/null || true)"` — tolerate no-torch hosts
+- `read -r ... <<< "$DEVINFO" || true` — tolerate empty probe output
+
+When the probe can't run, the script uses the recipe-default `--gpu-memory-utilization 0.85` (safe on an idle Spark).
+
+## Upstream README (Mia's Lab)
 ## Patches
 
 Two bugs in the image's `b12x` MoE package crash startup the moment MTP + CUDA graphs are enabled (the pre-MTP `marlin` path did not exercise them). They are fixed here as **host-side file overlays** mounted read-only into the container — no modified Docker image is needed:
