@@ -146,7 +146,7 @@ docker run -d \
     --reasoning-parser qwen3 \
     --limit-mm-per-prompt '{"image": 1, "video": 1}' \
     ${ORNITH_API_KEY:+--api-key "$ORNITH_API_KEY"} \
-    --default-chat-template-kwargs "{\"thinking\": $( [ "$DEFAULT_THINKING" = "off" ] && echo false || echo true ), \"reasoning_effort\": \"$DEFAULT_THINKING\"}"
+    --default-chat-template-kwargs "{\"enable_thinking\": $( [ "$DEFAULT_THINKING" = "off" ] && echo false || echo true ), \"reasoning_effort\": \"$DEFAULT_THINKING\"}"
 
 echo "Launched container $CONTAINER (image $IMAGE)."
 echo "Following the live vLLM log until the server is healthy..."

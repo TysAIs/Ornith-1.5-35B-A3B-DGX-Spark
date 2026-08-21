@@ -59,8 +59,10 @@ def stream_one(base_url, model, prompt, api_key=""):
         "stream": True, "stream_options": {"include_usage": True},
         "temperature": 0.6, "top_p": 0.95,
         "max_tokens": 128, "min_tokens": 128, "ignore_eos": True,
-        # Ornith is a Qwen3-family reasoning model: thinking off for decode bench
-        "chat_template_kwargs": {"thinking": False},
+        # Ornith is a Qwen3-family reasoning model: enable_thinking off for
+        # decode bench (Qwen3 template key — "thinking" is ignored and the
+        # model burns the budget in reasoning, returning empty content).
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     headers = {"Content-Type": "application/json"}
     if api_key:
