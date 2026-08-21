@@ -30,6 +30,12 @@ CONTAINER_HF="/root/.cache/huggingface"
 CONTAINER_VLLM="/root/.cache/vllm"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# User-installed CLIs (hf, huggingface-cli) live under ~/.local/bin, which is
+# NOT on the PATH of non-login/nohup shells. Add it so `hf` resolves.
+if [[ -d "$HOME/.local/bin" ]] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
 # -- 1. HF token gate (README warning: bare hf can hang on HTTP 401 if not exported) --
 if [[ ! -f "$HF_CACHE/token" ]]; then
   echo "No HF token found at $HF_CACHE/token" >&2
