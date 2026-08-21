@@ -40,7 +40,16 @@ export HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
 
 # -- 2. Ensure weights are cached in the user's home HF cache (idempotent, resumable) --
 echo "Ensuring $REPO is downloaded into $HF_CACHE/hub ..."
-hf download "$REPO"
+# Portable download: prefer the `hf` CLI, fall back to huggingface-cli, then
+# python -m huggingface_hub. (A bare `hf` fails when launched from a non-login
+# shell / nohup where PATH lacks the HF bin dir.)
+if command -v hf >/dev/null 2>&1; then
+  hf download "$REPO"
+elif command -v huggingface-cli >/dev/null 2>&1; then
+  huggingface-cli download "$REPO"
+else
+  python3 -m huggingface_hub download "$REPO"
+fi
 
 # Resolve the cached snapshot path.
 SNAPSHOT_DIR="$HF_CACHE/hub/models--ornith-ai--Ornith-1.5-35B-A3B-NVFP4"
