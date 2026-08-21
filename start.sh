@@ -14,7 +14,14 @@ IMAGE="eugr/spark-vllm-b12x@sha256:25fe41c2e85993b4e0534b3c72f68bf327c5d2726fbe1
 # Set ORNITH_API_KEY (e.g. in ~/.env or the deploy command) to require
 # "Authorization: Bearer <key>" on every request. Mirrors the DS4 recipe's
 # VLLM_API_KEY hardening so external users (brother access) are gated.
+# If ORNITH_API_KEY is unset, a 0600 file at ~/.ornith_api_key.env is loaded
+# automatically (one line: ORNITH_API_KEY=sk-...) — makes nohup/headless
+# launches self-contained.
 ORNITH_API_KEY="${ORNITH_API_KEY:-}"
+if [[ -z "$ORNITH_API_KEY" && -f "$HOME/.ornith_api_key.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$HOME/.ornith_api_key.env"
+fi
 CONTAINER="ornith-b12x-serve"
 REPO="ornith-ai/Ornith-1.5-35B-A3B-NVFP4"
 SERVED_MODEL_NAME="ornith-1.5-35b-a3b-nvfp4"
