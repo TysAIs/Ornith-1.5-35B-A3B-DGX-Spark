@@ -9,12 +9,21 @@
 # The B12X Docker image is pulled automatically from Docker Hub if absent.
 set -euo pipefail
 
-IMAGE="eugr/spark-vllm-b12x:latest"
+IMAGE="eugr/spark-vllm-b12x@sha256:25fe41c2e85993b4e0534b3c72f68bf327c5d2726fbe1640cf6b220715d3b0e3"
+# Optional API-key auth for the OpenAI endpoint. Empty = no auth (LAN/tailnet only).
+# Set ORNITH_API_KEY (e.g. in ~/.env or the deploy command) to require
+# "Authorization: Bearer <key>" on every request. Mirrors the DS4 recipe's
+# VLLM_API_KEY hardening so external users (brother access) are gated.
+ORNITH_API_KEY="${ORNITH_API_KEY:-}"
 CONTAINER="ornith-b12x-serve"
 REPO="ornith-ai/Ornith-1.5-35B-A3B-NVFP4"
 SERVED_MODEL_NAME="ornith-1.5-35b-a3b-nvfp4"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8889}"
+# Default reasoning mode: off|low|high|max. Ornith is a Qwen3-family reasoning
+# model; with thinking on and a small max_tokens it can emit content:null
+# (all budget spent reasoning). Set DEFAULT_THINKING=off for agent/CLI use.
+DEFAULT_THINKING="${DEFAULT_THINKING:-off}"
 HF_CACHE="${HF_HOME:-$HOME/.cache/huggingface}"
 VLLM_CACHE="${VLLM_CACHE:-$HOME/.cache/vllm}"
 CONTAINER_HF="/root/.cache/huggingface"
@@ -50,7 +59,8 @@ MODEL_IN_CONTAINER="$CONTAINER_HF/${MODEL#$HF_CACHE/}"
 echo "Using cached weights: $MODEL"
 
 # -- 3. Ensure the B12X Docker image is available locally; pull if not. --
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+IMAGE_REF="${IMAGE%%@*}"
+if ! docker image inspect "$IMAGE_REF" >/dev/null 2>&1 && ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "Image $IMAGE not found locally; pulling (may take a while)..."
   docker pull "$IMAGE"
 fi
@@ -112,7 +122,9 @@ docker run -d \
     --max-model-len 262144 \
     --enable-auto-tool-choice --tool-call-parser qwen3_xml \
     --reasoning-parser qwen3 \
-    --limit-mm-per-prompt '{"image": 1, "video": 1}'
+    --limit-mm-per-prompt '{"image": 1, "video": 1}' \
+    ${ORNITH_API_KEY:+--api-key "$ORNITH_API_KEY"} \
+    --default-chat-template-kwargs "{\"thinking\": $( [ "$DEFAULT_THINKING" = "off" ] && echo false || echo true ), \"reasoning_effort\": \"$DEFAULT_THINKING\"}"
 
 echo "Launched container $CONTAINER (image $IMAGE)."
 echo "Following the live vLLM log until the server is healthy..."
