@@ -57,7 +57,7 @@ Prerequisites:
 
 - An authenticated Hugging Face token at `~/.cache/huggingface/token` (a bare `hf download` without it silently hangs on HTTP 401).
 - Docker with NVIDIA Container Toolkit on the Spark.
-- The container image `eugr/spark-vllm-b12x:latest` is pulled automatically on first run if absent.
+- The container image `eugr/spark-vllm-b12x@sha256:25fe41c2e85993b4e0534b3c72f68bf327c5d2726fbe1640cf6b220715d3b0e3` (digest-pinned) is pulled automatically on first run if absent.
 
 ```bash
 # 1. Start (downloads weights on first run; tears down stale containers;
@@ -83,6 +83,8 @@ This fork enables the checkpoint's built-in multimodal support, which upstream s
 
 - `--limit-mm-per-prompt '{"image": 1, "video": 1}'` — accepts one image and/or one video per request
 - Served on `0.0.0.0:8889` (fleet-reachable; upstream defaults to 127.0.0.1:8888)
+- **Auth (optional):** set `ORNITH_API_KEY=sk-...` in the environment before `start.sh` to require `Authorization: Bearer <key>` on every request (mirrors the DS4 recipe's `VLLM_API_KEY` hardening; empty = open on LAN/tailnet).
+- **Thinking control:** `DEFAULT_THINKING=off|low|high|max` (default `off`) maps to `--default-chat-template-kwargs`. With thinking on and a small `max_tokens`, Ornith can return `content:null` (budget spent reasoning) — use `off` for agent/CLI tool-calling.
 - **Verified on DGX Spark 2026-08-21**: image input (screenshot description) and video input (red-screen + text identification) both return correct, detailed answers. Image tokens ~1k per screenshot; 8 concurrent requests complete in ~17s wall with real content.
 
 ### Host-launch fixes (upstream script crashed on hosts without `vllm`/`torch`)
